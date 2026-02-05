@@ -6,10 +6,7 @@ import tempfile
 import time
 import traceback
 
-import requests
-import urllib3
-from requests.adapters import TimeoutSauce
-from requests.utils import add_dict_to_cookiejar, dict_from_cookiejar
+import httpx
 from httpx_html import HTMLSession
 
 __version__ = "0.1.5"
@@ -18,33 +15,26 @@ __all__ = ["KaniRequests", "open_html_in_browser"]
 
 
 
-urllib3.disable_warnings()
-
-
 class KaniRequests(object):
     def __init__(self, headers={}, proxy={}, default_timeout=None, max_retries=3):
-        def __init__(self, *args, **kwargs):
-            if kwargs["connect"] is None:
-                kwargs["connect"] = default_timeout
-            if kwargs["read"] is None:
-                kwargs["read"] = default_timeout
-            return TimeoutSauce.__init__(self, *args, **kwargs)
-
-        DefaultTimeout = type("DefaultTimeout", (TimeoutSauce,), {"__init__": __init__})
-
         self.headers = headers
         self.proxy = proxy
-        self.session = HTMLSession()
+        timeout = httpx.Timeout(default_timeout) if default_timeout is not None else None
+        transport = httpx.HTTPTransport(retries=max_retries)
+        session_kwargs = {"transport": transport}
+        if timeout is not None:
+            session_kwargs["timeout"] = timeout
+        if headers:
+            session_kwargs["headers"] = headers
+        if proxy:
+            session_kwargs["proxies"] = proxy
+            session_kwargs["verify"] = False
+        self.session = HTMLSession(**session_kwargs)
         self.session.headers.update(headers)
         if proxy != {}:
             self.session.proxies = proxy
             # self.session.verify = os.path.join(os.path.dirname(__file__), "FiddlerRoot.pem")
-            self.session.verify = None
-        self.adapters = requests.adapters.HTTPAdapter(max_retries=max_retries)
-        self.adapters.TimeoutSauce = DefaultTimeout
-        requests.adapters.TimeoutSauce = DefaultTimeout
-        self.session.mount("http://", self.adapters)
-        self.session.mount("https://", self.adapters)
+            self.session.verify = False
         self.yag = None
         self.mail_to = None
         self.subject = None
@@ -56,8 +46,10 @@ class KaniRequests(object):
         self.subject = subject
 
     def mount(self, prefix, adapters):
-        self.session.mount(prefix, adapters)
-        self.session.mount(prefix, adapters)
+        raise NotImplementedError(
+            "mount is no longer supported with httpx-html. "
+            "Configure transport/proxy settings when creating KaniRequests instead."
+        )
 
     def get(self, url, *args, **kwargs):
         try:
@@ -133,10 +125,10 @@ class KaniRequests(object):
         self.session.close()
 
     def cookies_to_dict(self):
-        return dict_from_cookiejar(self.session.cookies)
+        return dict(self.session.cookies)
 
     def add_cookies(self, cookies):
-        add_dict_to_cookiejar(self.session.cookies, cookies)
+        self.session.cookies.update(cookies)
 
 
 def open_html_in_browser(html_text):
