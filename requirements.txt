@@ -1,4 +1,5 @@
 add_parent_path
+httpx-html
 kanilog
 pytest
 stdlogging
